@@ -828,10 +828,10 @@ function periodeSiklus(tgl){
 }
 const jamMenit = m => pad2(Math.floor(m/60)) + ':' + pad2(Math.round(m%60));
 /* Pasal 6 — hari kerja tanpa absen masuk sama sekali. Mulai berlaku
-   7 Okt 2026 (siklus gaji Oktober); hari sebelumnya tidak pernah dihitung,
+   6 Sep 2026 (keputusan pemilik, 7 Okt 2026); hari sebelumnya tidak dihitung,
    jadi tidak berlaku mundur. Potongannya FLAT per hari (bukan per jam),
    sama untuk jadwal 8 jam maupun 6 jam. */
-const TANPA_ABSEN_MULAI = '2026-10-07';
+const TANPA_ABSEN_MULAI = '2026-09-06';
 const POTONGAN_TANPA_ABSEN_BAWAAN = 57600;
 const tambahHari = (t, n) => { const d = new Date(String(t).slice(0,10) + 'T00:00:00'); d.setDate(d.getDate() + n); return tglKunci(d); };
 /* Tanggal LOKAL (WIB) dari sebuah waktu. Catatan waktu disimpan sebagai ISO
@@ -1189,7 +1189,7 @@ function catat(aksi, tabel, rekid, judul, sebelum, sesudah){
   sbSimpan('log', [r]);          // permanen di server; kalau gagal masuk antre
   return r;
 }
-const VERSI = '3.5';
+const VERSI = '3.6';
 /* ================= ATURAN PENGUBAHAN DATA =================
    UANG — jumlah diterima hanya boleh NAIK di tangan karyawan.
    Pelanggan bayar 50rb pagi lalu 70rb sore? Karyawan tinggal mengubah
