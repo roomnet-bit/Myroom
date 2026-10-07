@@ -1,0 +1,7 @@
+# File di repo yang TIDAK ikut tampil di situs
+wrangler.jsonc
+.assetsignore
+README.md
+*.md
+.git
+.github
