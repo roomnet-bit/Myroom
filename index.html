@@ -1189,7 +1189,7 @@ function catat(aksi, tabel, rekid, judul, sebelum, sesudah){
   sbSimpan('log', [r]);          // permanen di server; kalau gagal masuk antre
   return r;
 }
-const VERSI = '3.8';
+const VERSI = '4.0';
 /* ================= ATURAN PENGUBAHAN DATA =================
    UANG — jumlah diterima hanya boleh NAIK di tangan karyawan.
    Pelanggan bayar 50rb pagi lalu 70rb sore? Karyawan tinggal mengubah
@@ -3281,7 +3281,7 @@ function vMenu(){
   <div class="card"><h3>Data</h3>
     <button class="menu-item" data-act="backup">⬇️ <span>Cadangkan data<small>Simpan file JSON</small></span></button>
     <button class="menu-item" data-act="restore">⬆️ <span>Pulihkan dari cadangan<small>Ganti seluruh data saat ini</small></span></button>
-    <button class="menu-item" data-go="setelan">⚙️ <span>Pengaturan usaha<small>Nama, template pesan WA</small></span></button>
+    <button class="menu-item" data-go="setelan">⚙️ <span>Pengaturan usaha<small>Nama, pesan WA, potongan telat &amp; absensi</small></span></button>
     <button class="menu-item" data-act="reset">♻️ <span style="color:var(--alert)">Bersihkan data HP ini<small>Data di server tidak terpengaruh</small></span></button>
     <button class="menu-item" data-act="resettotal">🗑️ <span style="color:var(--alert)">Reset total (HP + Server)<small>Menghapus SEMUA data — untuk semua tim &amp; HP, tidak bisa dibatalkan</small></span></button>
   </div>
@@ -3579,8 +3579,9 @@ function sheetAturanAbsen(){
         Mulai 1 jam sebelum jam masuk jadwal, cuma tombol Mulai Lembur yang aktif. Kalau sudah pencet
         Lembur di jendela ini, tidak perlu absen masuk lagi hari itu — gajinya dipisah: lembur pra-shift
         (${rp(LEMBUR_PRA_SHIFT_RP_PER_JAM)}/jam, tarif flat) + gaji pokok seperti biasa. Kalau tidak pencet
-        Lembur, mulai 20 menit sebelum jam masuk, tombol Absen Masuk baru terbuka dan Mulai Lembur otomatis
-        terkunci untuk sesi hari itu.</p>
+        Lembur, mulai 20 menit sebelum jam masuk, tombol Absen Masuk ikut terbuka — tombol Mulai Lembur
+        tetap bisa dipencet sampai jam masuk. Menit sebelum jam masuk yang lewat tombol Lembur dibayar sebagai
+        lembur, jam istirahat tidak dihitung.</p>
       <p style="margin:0 0 10px"><b>Telat masuk &amp; pulang cepat</b><br>
         Toleransi ${TOLERANSI_MENIT} menit dari jadwal, di kedua sisi (masuk maupun pulang). Lewat itu
         dicatat "telat"${
@@ -4352,6 +4353,7 @@ function vSetelan(){
       Lembur tetap selalu bisa dipencet kapan saja kalau ada sesi terbuka, cuma jamnya tidak dihitung/dibayar
       kalau di luar jam operasional). Bawaan 08.00–22.00.
     </div>
+    <button class="btn p w" style="margin-top:16px" data-act="simpansetelan">Simpan pengaturan</button>
   </div><div style="height:8px"></div>`;
 }
 
@@ -5704,8 +5706,8 @@ function jamHM(menit){ menit = ((menit % 1440) + 1440) % 1440;
       gajinya dipisah: lembur pra-shift (tarif flat, lihat
       LEMBUR_PRA_SHIFT_RP_PER_JAM) + gaji pokok seperti biasa.
    3. Kalau tidak pencet Lembur di jendela 1 jam itu: mulai 20 menit
-      sebelum jam masuk, tombol Absen Masuk terbuka dan Lembur otomatis
-      terkunci untuk sesi hari itu.
+      sebelum jam masuk, tombol Absen Masuk terbuka dan tombol Lembur TETAP
+      terbuka sampai jam masuk (keputusan pemilik 7 Okt 2026).
    4. Selama jam shift (masuk sesi pertama s/d pulang sesi terakhir,
       termasuk jeda istirahat di antaranya): tombol Lembur terkunci.
       Absen Masuk tetap terbuka selama karyawan belum absen sama sekali
@@ -5776,8 +5778,9 @@ function statusTombolPresensi(u, hari, iniLibur, sesiHariIni){
         pesanMasuk:'Sudah lembur pagi ini — tidak perlu absen masuk lagi'};
     }
     if(skrg >= jendelaMasuk){
-      return {masuk:true, lembur:false,
-        pesanLembur:'Lembur terkunci — sudah masuk jendela Absen Masuk'};
+      /* 20 menit terakhir sebelum jam masuk: Absen Masuk terbuka, dan
+         Lembur TETAP terbuka (keputusan pemilik, 7 Okt 2026). */
+      return {masuk:true, lembur:true};
     }
     return {masuk:false, lembur:true,
       pesanMasuk:'Absen Masuk baru buka jam ' + jamHM(jendelaMasuk)};
@@ -5854,7 +5857,11 @@ function rekapHari(u, tanggal, sesiAbsen){
         let d0 = 0;
         for(const w of J.sesi) d0 += irisanMenit(m1, m2, w.mulai, w.selesai);
         dalam += Math.min(d0, total);
-        const luar0 = Math.min(Math.max(0, total - d0), BATAS_LEMBUR_SESI_MENIT);
+        /* jeda istirahat jadwal (mis. 12:00-13:00) bukan lembur walau sesi
+           lemburnya menyala melewatinya — dulu ikut terhitung. */
+        let jeda0 = 0;
+        for(const w of jedaJadwal) jeda0 += irisanMenit(m1, m2, w.mulai, w.selesai);
+        const luar0 = Math.min(Math.max(0, total - d0 - jeda0), BATAS_LEMBUR_SESI_MENIT);
         if(a.lembur_pra_shift) luarPraShift += luar0;
         else if(siaga) luarSiaga += luar0; else luarBiasa += luar0;
       }
@@ -5910,7 +5917,12 @@ function rekapHari(u, tanggal, sesiAbsen){
         telatPotongMenit += Math.max(0, lebih - TOLERANSI_MENIT);
       }else if(lebih < 0){
         awalMenit = -lebih;
-        lemburAwal = awalMenit;
+        /* Kalau datang awalnya lewat tombol Mulai Lembur, menit sebelum jadwal
+           itu SUDAH dibayar sebagai lembur (pra-shift / biasa) di atas —
+           jangan dibayar lagi sebagai lembur datang awal. Poin datang awal
+           tetap dapat. */
+        const pertama = sesiAbsen.slice().sort((x,y)=>new Date(x.masuk) - new Date(y.masuk))[0];
+        lemburAwal = (pertama && pertama.resmi_lembur) ? 0 : awalMenit;
       }
       /* Pulang cepat cuma masuk akal kalau hari itu memang sudah SELESAI.
          Dengan aturan baru (jadwal berjeda cukup 1x masuk & 1x pulang,
