@@ -1189,7 +1189,7 @@ function catat(aksi, tabel, rekid, judul, sebelum, sesudah){
   sbSimpan('log', [r]);          // permanen di server; kalau gagal masuk antre
   return r;
 }
-const VERSI = '3.6';
+const VERSI = '3.8';
 /* ================= ATURAN PENGUBAHAN DATA =================
    UANG — jumlah diterima hanya boleh NAIK di tangan karyawan.
    Pelanggan bayar 50rb pagi lalu 70rb sore? Karyawan tinggal mengubah
@@ -1864,19 +1864,66 @@ function buatCadangan(){
     pelanggan: DB.pel,
     pembayaran: DB.bayar,
     pengeluaran: DB.biaya,
+    tarif_riwayat: DB.tarifRiwayat || [],
+    kredit_pakai: DB.kreditPakai || [],
     tiket: DB.tiket,
+    psb: DB.psb || [],
     riwayat: DB.log,
-    /* nama dan peran saja — PIN tidak ikut */
-    pengguna: (DB.users||[]).map(u=>({id:u.id, nama:u.nama, peran:u.peran, jabatan:u.jabatan||'', aktif:u.aktif})),
+    /* Data karyawan. Dulu TIDAK ikut dicadangkan — bila server hilang,
+       absen, kasbon, gaji yang sudah dibayar, jadwal dan gaji pokok
+       ikut lenyap. Sekarang semuanya masuk; PIN tetap tidak. */
+    pengguna: (DB.users||[]).map(u=>{ const c = Object.assign({}, u); delete c.pin; return c; }),
+    presensi: DB.presensi || [],
+    absen: DB.absen || [],
+    kasbon: DB.kasbon || [],
+    gaji: DB.gaji || [],
+    komisi: DB.komisi || {},
+    libur_usaha: DB.liburUsaha || [],
+    kehadiran: DB.kehadiran || [],
+    /* titip voucher ke toko */
+    voucher: {jenis:DB.vJenis||[], toko:DB.vToko||[], sesi:DB.vSesi||[], detail:DB.vDetail||[],
+      stok:DB.vStok||[], jual:DB.vJual||[], tutup:DB.vTutup||[], hutang:DB.vHutang||[]},
 
     jumlah: {
       pelanggan: (DB.pel||[]).length,
       pembayaran: Object.keys(DB.bayar||{}).length,
       pengeluaran: (DB.biaya||[]).length,
       tiket: (DB.tiket||[]).length,
-      riwayat: (DB.log||[]).length
+      psb: (DB.psb||[]).length,
+      riwayat: (DB.log||[]).length,
+      pengguna: (DB.users||[]).length,
+      presensi: (DB.presensi||[]).length,
+      absen: (DB.absen||[]).length,
+      kasbon: (DB.kasbon||[]).length,
+      gaji: (DB.gaji||[]).length
     }
   };
+}
+/* Ubah berkas cadangan menjadi isi DB. Menerima format cadangan (pelanggan,
+   pembayaran, …) maupun salinan mentah DB lama (pel, bayar, …). Dulu tombol
+   Pulihkan hanya mengenali format mentah, sehingga berkas yang dibuat oleh
+   tombol Cadangkan sendiri SELALU ditolak "tidak terbaca". Server, antrean
+   kirim, nama perangkat, dan PIN yang ada di HP ini dipertahankan. */
+function dariCadangan(o, lama){
+  if(!o || typeof o !== 'object') throw new Error('bukan cadangan');
+  if(Array.isArray(o.pel)) return lengkapi(Object.assign({}, o, {server:lama.server, antre:lama.antre||[], perangkat:lama.perangkat}));
+  if(!Array.isArray(o.pelanggan)) throw new Error('bukan cadangan MyRoom');
+  const b = fresh();
+  const pinLama = {}; (lama.users||[]).forEach(u=>{ if(u.pin) pinLama[u.id] = u.pin; });
+  const v = o.voucher || {};
+  const d = Object.assign(b, {
+    usaha: Object.assign({}, b.usaha, o.usaha || {}),
+    pel: o.pelanggan, bayar: o.pembayaran || {}, biaya: o.pengeluaran || [],
+    tarifRiwayat: o.tarif_riwayat || [], kreditPakai: o.kredit_pakai || [],
+    tiket: o.tiket || [], psb: o.psb || [], log: o.riwayat || [],
+    users: (o.pengguna || []).map(u=>Object.assign({}, u, {pin: pinLama[u.id] || null})),
+    presensi: o.presensi || [], absen: o.absen || [], kasbon: o.kasbon || [], gaji: o.gaji || [],
+    komisi: o.komisi || {}, liburUsaha: o.libur_usaha || [], kehadiran: o.kehadiran || [],
+    vJenis: v.jenis || [], vToko: v.toko || [], vSesi: v.sesi || [], vDetail: v.detail || [],
+    vStok: v.stok || [], vJual: v.jual || [], vTutup: v.tutup || [], vHutang: v.hutang || [],
+    server: lama.server || b.server, antre: lama.antre || [], perangkat: lama.perangkat || b.perangkat
+  });
+  return lengkapi(d);
 }
 
 function sheetCadangan(){
@@ -1894,6 +1941,11 @@ function sheetCadangan(){
       <tr><td>Pengeluaran</td><td class="n">${j.pengeluaran}</td></tr>
       <tr><td>Gangguan</td><td class="n">${j.tiket}</td></tr>
       <tr><td>Riwayat aktivitas</td><td class="n">${j.riwayat}</td></tr>
+      <tr><td>Anggota tim (tanpa PIN)</td><td class="n">${j.pengguna}</td></tr>
+      <tr><td>Catatan absen / presensi</td><td class="n">${j.presensi}</td></tr>
+      <tr><td>Alpa, izin, sakit, cuti</td><td class="n">${j.absen}</td></tr>
+      <tr><td>Kasbon</td><td class="n">${j.kasbon}</td></tr>
+      <tr><td>Gaji yang sudah dibayar</td><td class="n">${j.gaji}</td></tr>
       <tr class="tot"><td><b>Tunggakan tercatat</b></td><td class="n"><b>${rp(nilaiTunggak)}</b><br>
         <span style="font-size:11px;color:var(--ink2);font-weight:400">dari ${tunggak} pelanggan</span></td></tr>
     </tbody></table>
@@ -4893,6 +4945,18 @@ function tarifPotongJam(u){
   if(gaji > 0 && J.wajib > 0) return gaji / HARI_KERJA / J.wajib;
   return +(DB.usaha && DB.usaha.potonganTelatRp) || 0;
 }
+/* Alasan yang membuat telat / tanpa absen TIDAK terhitung untuk seseorang —
+   ditampilkan di layar gaji supaya pemilik tidak mengira karyawan itu
+   selalu tepat waktu, padahal datanya memang tidak bisa dihitung. */
+function diagnosaGaji(u, rk){
+  const out = [];
+  const J = jadwalUser(u);
+  if(!J.sesi.length) out.push('Belum punya <b>jadwal kerja</b> — telat, pulang cepat, dan tanpa absen tidak bisa dihitung. Isi lewat Menu › Tim &amp; PIN.');
+  if(!(DB.usaha && DB.usaha.potongTelat)) out.push('Saklar <b>Potong gaji kalau telat</b> di Setelan sedang MATI — telat &amp; tanpa absen hanya dicatat, tidak memotong gaji.');
+  if(rk && rk.hariHadir === 0) out.push('Tidak ada satu pun catatan absen pada siklus ini.');
+  if(rk && rk.belumTutup) out.push(rk.belumTutup + 'x lupa absen pulang — jam kerja hari itu bisa terhitung 0.');
+  return out;
+}
 function potonganTanpaAbsenRp(){
   const v = DB.usaha && DB.usaha.potonganTanpaAbsenRp;
   return v == null || v === '' ? POTONGAN_TANPA_ABSEN_BAWAAN : Math.max(0, Math.round(+v || 0));
@@ -5005,7 +5069,8 @@ function hitungGaji(u, periode, d1, d2){
           rincianTelat, rincianTanpaMasuk, rincianLembur, rincianAbsen,
           kasbonAwal, kasbonBaru, kasbonBaruJml, kasbonAkhir,
           tarifLembur:rk.tarif, jamWajib:rk.wajib, rateTelat:rate, potongAktif,
-          poinRinci: b || null, rpTanpaAbsen, rateJam, pakaiGaji};
+          poinRinci: b || null, rpTanpaAbsen, rateJam, pakaiGaji,
+          diagnosa: diagnosaGaji(u, rk)};
 }
 
 /* Karyawan yang sudah berhenti tetap ditampilkan selama masih ada urusan:
@@ -5125,6 +5190,8 @@ function sheetGajiOrang(nama){
   sheet(`<h2>${esc(nama)}</h2>
     <div class="sub">Gaji ${esc(pLbl(pr))} · siklus ${esc(g.siklusTeks)} · gajian ${esc(g.tglBayar)}</div>
 
+${(g.diagnosa||[]).length? `<div style="margin-top:12px;background:var(--alert-l);color:var(--alert);padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.55">
+      <b>⚠️ Perlu dicek:</b><br>${g.diagnosa.map(x=>'• '+x).join('<br>')}</div>`:''}
     <label>Gaji pokok per bulan</label>
     <input id="gPokok" type="number" inputmode="numeric" value="${g.pokok||''}" placeholder="contoh: 1500000">
 
@@ -5140,10 +5207,10 @@ function sheetGajiOrang(nama){
       <tr><td>Gaji pokok</td><td class="n">${rp(g.pokok)}</td></tr>
       ${g.alpa? `<tr><td>Alpa ${g.alpa} hari <span style="color:var(--ink2);font-size:11px">(${rp(g.perHari)}/hari)</span></td>
         <td class="n" style="color:var(--alert)">−${rp(g.potonganAlpa)}</td></tr>`:''}
-      ${g.potonganTelat? `<tr><td>Telat ${g.kaliTelat}x (${jamTeks(g.menitTelat)}) <span style="color:var(--ink2);font-size:11px">(${rpJam(g.rateJam)}/jam)</span></td>
-        <td class="n" style="color:var(--alert)">−${rp(g.potonganTelat)}</td></tr>`:''}
-      ${g.potonganTanpaMasuk? `<tr><td>Tanpa absen masuk ${g.hariTanpaAbsenMasuk} hari <span style="color:var(--ink2);font-size:11px">(${rp(g.rpTanpaAbsen)}/hari)</span></td>
-        <td class="n" style="color:var(--alert)">−${rp(g.potonganTanpaMasuk)}</td></tr>`:''}
+      ${g.kaliTelat? `<tr><td>Telat ${g.kaliTelat}x (${jamTeks(g.menitTelat)}) <span style="color:var(--ink2);font-size:11px">(${g.potonganTelat? rpJam(g.rateJam)+'/jam' : 'dicatat, tidak dipotong'})</span></td>
+        <td class="n" style="color:var(--alert)">${g.potonganTelat? '−'+rp(g.potonganTelat) : '—'}</td></tr>`:''}
+      ${g.hariTanpaAbsenMasuk? `<tr><td>Tanpa absen masuk ${g.hariTanpaAbsenMasuk} hari <span style="color:var(--ink2);font-size:11px">(${g.potonganTanpaMasuk? rp(g.rpTanpaAbsen)+'/hari' : 'dicatat, tidak dipotong'})</span></td>
+        <td class="n" style="color:var(--alert)">${g.potonganTanpaMasuk? '−'+rp(g.potonganTanpaMasuk) : '—'}</td></tr>`:''}
       ${g.bonus? `<tr><td>Bonus ${poinTeks(g.poin)} poin</td><td class="n" style="color:var(--lunas)">+${rp(g.bonus)}</td></tr>`:''}
       ${g.komisiJml? `<tr><td>Komisi &amp; apresiasi${g.komisiKet? ` <span style="color:var(--ink2);font-size:11px">(${esc(g.komisiKet)})</span>`:''}</td>
         <td class="n" style="color:var(--lunas)">+${rp(g.komisiJml)}</td></tr>`:''}
@@ -5336,8 +5403,8 @@ function sheetSlipGaji(nama){
       <table style="margin-top:10px"><tbody>
         <tr><td>Gaji pokok</td><td class="n">${rp(g.pokok)}</td></tr>
         ${g.alpa? `<tr><td>Alpa ${g.alpa} hari</td><td class="n" style="color:var(--alert)">−${rp(g.potonganAlpa)}</td></tr>`:''}
-        ${g.potonganTelat? `<tr><td>Telat ${g.kaliTelat}x (${jamTeks(g.menitTelat)})</td><td class="n" style="color:var(--alert)">−${rp(g.potonganTelat)}</td></tr>`:''}
-        ${g.potonganTanpaMasuk? `<tr><td>Tanpa absen masuk ${g.hariTanpaAbsenMasuk} hari</td><td class="n" style="color:var(--alert)">−${rp(g.potonganTanpaMasuk)}</td></tr>`:''}
+        ${g.kaliTelat? `<tr><td>Telat ${g.kaliTelat}x (${jamTeks(g.menitTelat)})</td><td class="n" style="color:var(--alert)">${g.potonganTelat? '−'+rp(g.potonganTelat) : '—'}</td></tr>`:''}
+        ${g.hariTanpaAbsenMasuk? `<tr><td>Tanpa absen masuk ${g.hariTanpaAbsenMasuk} hari</td><td class="n" style="color:var(--alert)">${g.potonganTanpaMasuk? '−'+rp(g.potonganTanpaMasuk) : '—'}</td></tr>`:''}
         ${g.bonus? `<tr><td>Bonus ${poinTeks(g.poin)} poin</td><td class="n" style="color:var(--lunas)">+${rp(g.bonus)}</td></tr>`:''}
         ${g.komisiJml? `<tr><td>Komisi &amp; apresiasi${g.komisiKet? ` (${esc(g.komisiKet)})`:''}</td><td class="n" style="color:var(--lunas)">+${rp(g.komisiJml)}</td></tr>`:''}
         ${g.upahLembur? `<tr><td>Lembur ${String(g.jamLembur).replace('.',',')} jam</td><td class="n" style="color:var(--lunas)">+${rp(g.upahLembur)}</td></tr>`:''}
@@ -5350,6 +5417,8 @@ function sheetSlipGaji(nama){
       ${sisa>0? `<div style="font-size:11.5px;color:var(--belum);margin-top:6px">
         Sisa kasbon ${rp(sisa)} — dipotong gajian berikutnya</div>`:''}
 
+${(g.diagnosa||[]).length? `<div style="margin-top:12px;background:var(--alert-l);color:var(--alert);padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.55">
+      <b>⚠️ Perlu dicek:</b><br>${g.diagnosa.map(x=>'• '+x).join('<br>')}</div>`:''}
       ${GAYA_RINCI_APP}${rincianSlipHtml(g)}
 
       <div style="text-align:center;margin-top:14px;padding:9px;border-radius:9px;
@@ -7465,7 +7534,13 @@ document.addEventListener('click', async e=>{
       const inp = document.createElement('input'); inp.type='file'; inp.accept='.json,application/json';
       inp.onchange = () => { const f = inp.files[0]; if(!f) return; const rd = new FileReader();
         rd.onload = () => { try{ const o = JSON.parse(rd.result);
-            if(!o.pel) throw 0; DB = o; save();
+            const baru = dariCadangan(o, DB);
+            const jp = (baru.pel||[]).length, jk = (baru.presensi||[]).length;
+            if(!confirm('Pulihkan dari "' + (f.name||'berkas') + '"?\n\n' + jp + ' pelanggan, '
+              + Object.keys(baru.bayar||{}).length + ' pembayaran, ' + jk + ' catatan absen'
+              + (o.dibuat ? '\nDibuat ' + tglId(o.dibuat) : '')
+              + '\n\nSeluruh data di HP ini akan DIGANTI.')) return;
+            DB = baru; alokasiBatal(); save();
             catat('edit', 'data', 'pulih', 'Pulihkan dari cadangan', '', f.name || 'berkas cadangan');
             toast('Data dipulihkan'); render(); }
           catch(err){ toast('File cadangan tidak terbaca'); } };

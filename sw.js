@@ -17,7 +17,7 @@
      data terbaru — jauh lebih berbahaya daripada sekadar tidak update.
    =================================================================== */
 
-const VERSI = 'myroom-v6';
+const VERSI = 'myroom-v8';
 const INTI = [
   './',
   './index.html',
