@@ -533,6 +533,7 @@ function lengkapi(d){
   if(d.usaha.potonganTelatRp == null) d.usaha.potonganTelatRp = b.usaha.potonganTelatRp;
   if(d.usaha.potonganTanpaAbsenRp == null) d.usaha.potonganTanpaAbsenRp = POTONGAN_TANPA_ABSEN_BAWAAN;
   if(!Array.isArray(d.liburUsaha)) d.liburUsaha = [];
+  if(!Array.isArray(d.lemburDitolak)) d.lemburDitolak = [];
   if(d.usaha.jamOpMulai == null) d.usaha.jamOpMulai = b.usaha.jamOpMulai;
   if(d.usaha.jamOpSelesai == null) d.usaha.jamOpSelesai = b.usaha.jamOpSelesai;
   return d;
@@ -1189,7 +1190,7 @@ function catat(aksi, tabel, rekid, judul, sebelum, sesudah){
   sbSimpan('log', [r]);          // permanen di server; kalau gagal masuk antre
   return r;
 }
-const VERSI = '4.0';
+const VERSI = '4.2';
 /* ================= ATURAN PENGUBAHAN DATA =================
    UANG — jumlah diterima hanya boleh NAIK di tangan karyawan.
    Pelanggan bayar 50rb pagi lalu 70rb sore? Karyawan tinggal mengubah
@@ -1499,7 +1500,9 @@ function rincianSlipHtml(g){
       `<tr><td>Jam kerja normal tercatat</td><td class="n">${String(g.jamKerja).replace('.',',')} jam</td></tr>`,
       `<tr><td>Alpa / izin / sakit / cuti</td><td class="n">${jml('alpa')} / ${jml('izin')} / ${jml('sakit')} / ${jml('cuti')} hari</td></tr>`,
       `<tr><td>Telat masuk / pulang cepat</td><td class="n">${g.kaliTelat}x · ${jamTeks(g.menitTelat)}</td></tr>`,
-      g.belumTutup ? `<tr><td>Lupa absen pulang</td><td class="n">${g.belumTutup}x</td></tr>` : ''
+      g.belumTutup ? `<tr><td>Lupa absen pulang</td><td class="n">${g.belumTutup}x</td></tr>` : '',
+      g.menitLemburMenunggu ? `<tr><td>Lembur menunggu persetujuan (belum dibayar)</td><td class="n">${jamTeks(g.menitLemburMenunggu)}</td></tr>` : '',
+      g.menitLemburDitolak ? `<tr><td>Lembur ditolak (tidak dibayar)</td><td class="n">${jamTeks(g.menitLemburDitolak)}</td></tr>` : ''
     ])}</div>`);
 
   /* 2. Tidak masuk */
@@ -1879,6 +1882,7 @@ function buatCadangan(){
     gaji: DB.gaji || [],
     komisi: DB.komisi || {},
     libur_usaha: DB.liburUsaha || [],
+    lembur_ditolak: DB.lemburDitolak || [],
     kehadiran: DB.kehadiran || [],
     /* titip voucher ke toko */
     voucher: {jenis:DB.vJenis||[], toko:DB.vToko||[], sesi:DB.vSesi||[], detail:DB.vDetail||[],
@@ -1918,7 +1922,7 @@ function dariCadangan(o, lama){
     tiket: o.tiket || [], psb: o.psb || [], log: o.riwayat || [],
     users: (o.pengguna || []).map(u=>Object.assign({}, u, {pin: pinLama[u.id] || null})),
     presensi: o.presensi || [], absen: o.absen || [], kasbon: o.kasbon || [], gaji: o.gaji || [],
-    komisi: o.komisi || {}, liburUsaha: o.libur_usaha || [], kehadiran: o.kehadiran || [],
+    komisi: o.komisi || {}, liburUsaha: o.libur_usaha || [], lemburDitolak: o.lembur_ditolak || [], kehadiran: o.kehadiran || [],
     vJenis: v.jenis || [], vToko: v.toko || [], vSesi: v.sesi || [], vDetail: v.detail || [],
     vStok: v.stok || [], vJual: v.jual || [], vTutup: v.tutup || [], vHutang: v.hutang || [],
     server: lama.server || b.server, antre: lama.antre || [], perangkat: lama.perangkat || b.perangkat
@@ -3513,6 +3517,18 @@ async function sheetPresensi(id){
     </div>
     ${jarak!=null ? `<div style="font-size:12px;color:${jarak>500?'var(--belum)':'var(--ink2)'};margin-top:10px">
       Jarak titik masuk ke titik pulang: ${jarak} meter${jarak>500? ' — cukup jauh, perlu ditanyakan':''}</div>`:''}
+    ${a.resmi_lembur ? (()=>{
+      const st = lemburDitolak(a.id) ? 'ditolak' : (lemburPerluSetuju(a) ? 'menunggu' : 'disetujui');
+      const warna = {ditolak:'var(--alert)', menunggu:'var(--belum)', disetujui:'var(--lunas)'}[st];
+      const label = {ditolak:'❌ Lembur DITOLAK — tidak dibayar', menunggu:'⏳ Lembur menunggu persetujuan — belum dibayar', disetujui:'✅ Lembur disetujui — dibayar'}[st];
+      return `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--paper);font-size:12.5px">
+        <b style="color:${warna}">🕒 ${label}</b>${a.lembur_pra_shift ? '<br><span style="color:var(--ink2)">Lembur pra-shift (sebelum jam masuk)</span>' : ''}
+        ${can('uang') ? `<div class="fr" style="margin-top:8px">
+          ${st !== 'disetujui' ? `<button class="btn sm p" data-act="setujuilembur" data-id="${a.id}">Setujui</button>` : ''}
+          ${st !== 'ditolak' ? `<button class="btn sm d" data-act="tolaklembur" data-id="${a.id}">Tolak (tidak dibayar)</button>`
+                             : `<button class="btn sm" data-act="pulihkanlembur" data-id="${a.id}">Batalkan penolakan</button>`}
+          <button class="btn sm" data-act="editlembur" data-id="${a.id}">Edit jam</button>
+        </div>` : ''}</div>`; })() : ''}
     <div style="font-size:11.5px;color:var(--ink2);margin-top:10px">
       ${umur > 3 ? 'Foto absen lebih dari 3 hari sudah terhapus otomatis dari server. Jam dan lokasi tetap tersimpan.'
                  : 'Foto tersimpan di server selama 3 hari, lalu terhapus sendiri.'}
@@ -3738,7 +3754,7 @@ function vPresensi(){
           <span style="font-size:10.5px;color:var(--ink2)">upah lembur</span></div>
       </div>`; }).join('') || '<div class="empty"><b>Belum ada anggota tim</b></div>'}
     <div style="font-size:11px;color:var(--ink2);margin-top:8px">
-      Lembur hanya terhitung lewat tombol "Mulai Lembur" (termasuk kerja di hari libur). Jam di luar jadwal lewat absen biasa (pulang telat dsb.) tidak dihitung lembur.
+      Lembur hanya terhitung lewat tombol "Mulai Lembur" (termasuk kerja di hari libur), dan baru dibayar setelah disetujui pemilik. Jam di luar jadwal lewat absen biasa (pulang telat dsb.) tidak dihitung lembur.
       Jam lembur yang bersamaan dengan gangguan yang sudah disahkan (siaga) dibayar ${Math.round(SIAGA_PENGALI*100)}% dari tarif lembur biasa, karena gangguannya sudah dihargai lewat poin &amp; bonus.
       ${DB.usaha.potongTelat? 'Potongan telat aktif: gaji pokok ÷ ' + HARI_KERJA + ' ÷ jam wajib per jam (per orang) — atur di Setelan.' : ''}
       Atur jadwal tiap orang lewat Menu &rsaquo; Tim &amp; PIN.
@@ -3749,17 +3765,18 @@ function vPresensi(){
      "Mulai Lembur") ditahan dulu — tidak masuk upah — sampai pemilik
      menyetujuinya satu per satu di sini. */
   const semuaPerluReview = tim.filter(u=>u.peran==='karyawan')
-    .reduce((s,u)=>s.concat(rekapJam(u, R.d1, R.d2).perluReview), [])
+    .reduce((s,u)=>s.concat(rekapJam(u, LEMBUR_SETUJU_MULAI, tglKunci()).perluReview), [])
     .sort((a,b)=> b.tanggal.localeCompare(a.tanggal));
   const kartuReview = semuaPerluReview.length ? `
   <div class="card"><h3>⚠️ Lembur menunggu persetujuan</h3>
-    <div style="font-size:12px;color:var(--ink2);margin-bottom:6px">Selisihnya lebih dari ${jamTeks(BATAS_LEMBUR_OTOMATIS_MENIT)} dan bukan lewat tombol "Mulai Lembur" — belum masuk hitungan gaji sampai disetujui.</div>
+    <div style="font-size:12px;color:var(--ink2);margin-bottom:6px">Sesi lembur dari tombol "Mulai Lembur" — <b>belum dibayar</b> sampai disetujui. Ketuk baris untuk melihat foto &amp; jamnya.</div>
+    ${semuaPerluReview.length > 1 ? `<button class="btn sm p w" style="margin-bottom:8px" data-act="setujuisemualembur">Setujui semua (${semuaPerluReview.length} sesi · ${jamTeks(semuaPerluReview.reduce((t,x)=>t+x.menit,0))})</button>` : ''}
     ${semuaPerluReview.map(r2=>`<div class="row" data-presensi="${r2.id}" style="cursor:pointer;flex-wrap:wrap">
-      <div class="nm"><b>${esc(r2.nama)}</b><span>${esc(tglId(r2.tanggal))} · ${jamTeks(r2.menit)}</span></div>
+      <div class="nm"><b>${esc(r2.nama)}</b><span>${esc(tglId(r2.tanggal))} · ${jamTeks(r2.menit)}${r2.jenis ? ' · ' + esc(r2.jenis) : ''}</span></div>
       <div style="display:flex;gap:6px">
         <button class="btn sm p" data-act="setujuilembur" data-id="${r2.id}">Setujui</button>
+        <button class="btn sm d" data-act="tolaklembur" data-id="${r2.id}">Tolak</button>
         <button class="btn sm" data-act="editlembur" data-id="${r2.id}">Edit</button>
-        <button class="btn sm" data-act="hapuslembur" data-id="${r2.id}">Hapus</button>
       </div>
     </div>`).join('')}
   </div>` : '';
@@ -4556,7 +4573,7 @@ function sheetUser(id, jadiPemilik){
       </select>
       <div style="font-size:11px;color:var(--ink2);margin-top:6px">
         Kosongkan upah lembur untuk memakai hitungan otomatis: gaji pokok ÷ ${HARI_KERJA} hari ÷ jam wajib.
-        Lembur hanya terhitung lewat tombol "Mulai Lembur" (termasuk kerja di hari libur).
+        Lembur hanya terhitung lewat tombol "Mulai Lembur" (termasuk kerja di hari libur), dan baru dibayar setelah disetujui pemilik.
         Jam wajib &amp; upah lembur berlaku sama untuk Senin–Sabtu; yang beda cuma jam kerjanya.
       </div>
     </div>`:''}
@@ -4957,6 +4974,8 @@ function diagnosaGaji(u, rk){
   if(!(DB.usaha && DB.usaha.potongTelat)) out.push('Saklar <b>Potong gaji kalau telat</b> di Setelan sedang MATI — telat &amp; tanpa absen hanya dicatat, tidak memotong gaji.');
   if(rk && rk.hariHadir === 0) out.push('Tidak ada satu pun catatan absen pada siklus ini.');
   if(rk && rk.belumTutup) out.push(rk.belumTutup + 'x lupa absen pulang — jam kerja hari itu bisa terhitung 0.');
+  if(rk && rk.menitLemburReview > 0) out.push('<b>' + jamTeks(rk.menitLemburReview) + ' lembur menunggu persetujuan</b> ('
+    + (rk.perluReview||[]).length + ' sesi) — BELUM dibayar. Setujui di Menu › Absen &amp; jam kerja, kartu "Lembur menunggu persetujuan".');
   return out;
 }
 function potonganTanpaAbsenRp(){
@@ -4985,7 +5004,8 @@ function hitungGaji(u, periode, d1, d2){
      (resmi_lembur), dikalikan tarifnya. Dihitung otomatis dari catatan
      absen pada rentang yang sedang dilihat. */
   const rk = rekapJam(u, d1, d2);
-  const jamLembur = Math.round(rk.jamLembur * 100) / 100;
+  /* termasuk jam pra-shift, supaya "Lembur X jam" di slip sesuai rupiahnya */
+  const jamLembur = Math.round((rk.jamLembur + rk.jamLemburPraShift) * 100) / 100;
   const jamLemburBiasa = Math.round(rk.jamLemburBiasa * 100) / 100;
   const jamLemburSiaga = Math.round(rk.jamLemburSiaga * 100) / 100;
   const jamLemburPraShift = Math.round(rk.jamLemburPraShift * 100) / 100;
@@ -5072,7 +5092,8 @@ function hitungGaji(u, periode, d1, d2){
           kasbonAwal, kasbonBaru, kasbonBaruJml, kasbonAkhir,
           tarifLembur:rk.tarif, jamWajib:rk.wajib, rateTelat:rate, potongAktif,
           poinRinci: b || null, rpTanpaAbsen, rateJam, pakaiGaji,
-          diagnosa: diagnosaGaji(u, rk)};
+          diagnosa: diagnosaGaji(u, rk), menitLemburDitolak: rk.menitLemburDitolak || 0,
+          menitLemburMenunggu: rk.menitLemburReview || 0};
 }
 
 /* Karyawan yang sudah berhenti tetap ditampilkan selama masih ada urusan:
@@ -5633,6 +5654,23 @@ const SIAGA_PENGALI = 0.5;      // tarif lembur saat gangguan: 50% dari tarif le
    masih dirujuk oleh kartu "Lembur menunggu persetujuan" (kini selalu kosong
    karena tidak ada lagi jalur yang mengisi perluReview) dan data lama. */
 const BATAS_LEMBUR_OTOMATIS_MENIT = 120;
+/* Sejak siklus gaji Oktober 2026 (keputusan pemilik 10 Okt 2026): sesi dari
+   tombol "Mulai Lembur" baru DIBAYAR setelah pemilik menekan Setujui. Sesi
+   sebelum tanggal ini dianggap sudah disetujui supaya gaji September yang
+   sudah dibayar tidak berubah. Datang awal / pulang lewat jadwal lewat absen
+   biasa tidak perlu persetujuan (tetap otomatis). */
+const LEMBUR_SETUJU_MULAI = '2026-10-07';
+/* Lembur DITOLAK pemilik: sesinya tetap tersimpan (jam kerja normal di dalam
+   jadwal tetap dihitung), hanya bagian lemburnya tidak dibayar. Disimpan di
+   tabel pengaturan (kunci "lembur_ditolak", JSON daftar id sesi) supaya
+   tidak perlu kolom baru di server dan semua HP sama. */
+const lemburDitolak = id => (DB.lemburDitolak||[]).some(x=>x.id === id);
+function simpanLemburDitolak(){
+  save();
+  if(sbOn()) sbPengaturan('lembur_ditolak', JSON.stringify(DB.lemburDitolak||[]));
+}
+const lemburPerluSetuju = a => !!(a && a.resmi_lembur && !a.lembur_disetujui && !lemburDitolak(a.id)
+  && String(a.tanggal||'') >= LEMBUR_SETUJU_MULAI);
 /* Batas maksimal per SESI lembur di hari libur (lihat rekapHari) — bukan
    batas total sehari, tapi per sesi. Kalau masih lanjut kerja setelah 2
    jam, karyawan harus tutup sesi ini & buka sesi lembur baru. */
@@ -5825,7 +5863,7 @@ function rekapHari(u, tanggal, sesiAbsen){
   for(let i=0;i<sesiUrut.length-1;i++) jedaJadwal.push({mulai:sesiUrut[i].selesai, selesai:sesiUrut[i+1].mulai});
 
   const autoTutup = !!(DB.usaha && DB.usaha.autoTutupLupaPulang);
-  let dalam = 0, luarBiasa = 0, luarSiaga = 0, luarPraShift = 0, luarReview = 0, belumTutup = 0;
+  let dalam = 0, luarBiasa = 0, luarSiaga = 0, luarPraShift = 0, luarReview = 0, luarDitolak = 0, belumTutup = 0;
   const perluReview = [];
   for(const a of sesiAbsen){
     let m2;
@@ -5850,9 +5888,22 @@ function rekapHari(u, tanggal, sesiAbsen){
        lembur_pra_shift (Pasal 5) dipisah, dibayar tarif flat, bukan tarif
        lembur pribadi. */
     if(a.resmi_lembur){
+      if(lemburDitolak(a.id)){
+        /* ditolak: lembur tidak dibayar; jam di dalam jadwal tetap jam kerja */
+        let dT = 0, jT = 0;
+        if(!iniLibur){
+          for(const w of J.sesi) dT += irisanMenit(m1, m2, w.mulai, w.selesai);
+          for(const w of jedaJadwal) jT += irisanMenit(m1, m2, w.mulai, w.selesai);
+        }
+        dalam += Math.min(dT, total);
+        luarDitolak += Math.max(0, total - dT - jT);
+        continue;
+      }
+      const tahan = lemburPerluSetuju(a);
       if(iniLibur){
         const totalDibayar = Math.min(total, BATAS_LEMBUR_SESI_MENIT);
-        if(siaga) luarSiaga += totalDibayar; else luarBiasa += totalDibayar;
+        if(tahan){ luarReview += totalDibayar; perluReview.push({id:a.id, menit:totalDibayar, jenis: siaga ? 'siaga' : 'libur'}); }
+        else if(siaga) luarSiaga += totalDibayar; else luarBiasa += totalDibayar;
       }else{
         let d0 = 0;
         for(const w of J.sesi) d0 += irisanMenit(m1, m2, w.mulai, w.selesai);
@@ -5862,7 +5913,11 @@ function rekapHari(u, tanggal, sesiAbsen){
         let jeda0 = 0;
         for(const w of jedaJadwal) jeda0 += irisanMenit(m1, m2, w.mulai, w.selesai);
         const luar0 = Math.min(Math.max(0, total - d0 - jeda0), BATAS_LEMBUR_SESI_MENIT);
-        if(a.lembur_pra_shift) luarPraShift += luar0;
+        if(tahan){
+          if(luar0 > 0){ luarReview += luar0;
+            perluReview.push({id:a.id, menit:luar0, jenis: a.lembur_pra_shift ? 'pra-shift' : (siaga ? 'siaga' : 'biasa')}); }
+        }
+        else if(a.lembur_pra_shift) luarPraShift += luar0;
         else if(siaga) luarSiaga += luar0; else luarBiasa += luar0;
       }
       continue;
@@ -5956,7 +6011,7 @@ function rekapHari(u, tanggal, sesiAbsen){
   const lembur = lemburBiasa + lemburSiaga;
 
   return {tanggal, hari, iniLibur, normal, lembur, lemburBiasa, lemburSiaga, lemburPraShift:luarPraShift,
-          lemburReview:luarReview, perluReview, belumTutup, telat, telatPotongMenit, awalMenit, tanpaAbsenMasuk,
+          lemburReview:luarReview, lemburDitolak:luarDitolak, perluReview, belumTutup, telat, telatPotongMenit, awalMenit, tanpaAbsenMasuk,
           kurang: iniLibur ? 0 : Math.max(0, batas - normal)};
 }
 /* Pasal 3: bonus poin bertingkat untuk datang lebih awal. 0-10 menit lebih
@@ -6012,6 +6067,7 @@ function rekapJam(u, d1, d2){
   const menitLemburBiasa = jml('lemburBiasa'), menitLemburSiaga = jml('lemburSiaga');
   const menitLemburPraShift = jml('lemburPraShift');
   const menitLemburReview = jml('lemburReview');
+  const menitLemburDitolak = jml('lemburDitolak');
   const perluReview = hari.reduce((s,x)=>s.concat((x.perluReview||[]).map(r=>Object.assign({tanggal:x.tanggal, nama:u.nama}, r))), []);
   const upahLemburBiasa = Math.round((menitLemburBiasa/60) * J.tarif);
   const upahLemburSiaga = Math.round((menitLemburSiaga/60) * J.tarif * SIAGA_PENGALI);
@@ -6023,7 +6079,7 @@ function rekapJam(u, d1, d2){
   const hariTanpaAbsenMasuk = tanpaAbsen.length;
   return {
     nama:u.nama, hariHadir:hari.length, hari,
-    menitNormal, menitLembur, menitLemburBiasa, menitLemburSiaga, menitLemburPraShift, menitLemburReview, perluReview,
+    menitNormal, menitLembur, menitLemburBiasa, menitLemburSiaga, menitLemburPraShift, menitLemburReview, menitLemburDitolak, perluReview,
     jamNormal: menitNormal/60, jamLembur: menitLembur/60,
     jamLemburBiasa: menitLemburBiasa/60, jamLemburSiaga: menitLemburSiaga/60, jamLemburPraShift: menitLemburPraShift/60,
     menitKurang: jml('kurang'),
@@ -6536,10 +6592,42 @@ document.addEventListener('click', async e=>{
       await sbSimpan('presensi', [baru]);
       segeraSinkron(); toast('Sesi lembur baru dimulai'); render(); break;
     }
+    case 'tolaklembur': {
+      if(!can('uang')){ toast('Khusus pemilik'); break; }
+      const a = (DB.presensi||[]).find(x=>x.id === d.id); if(!a){ toast('Data absen tidak ditemukan'); break; }
+      if(!a.resmi_lembur){ toast('Ini bukan sesi lembur'); break; }
+      if(!confirm('Tolak lembur ' + a.nama + ' ' + tglId(a.tanggal) + ' (' + jamSaja(a.masuk) + (a.pulang ? '–' + jamSaja(a.pulang) : '') + ')?\n\n'
+        + 'Lemburnya TIDAK dibayar. Catatan absennya tetap ada, dan jam yang jatuh di dalam jadwal kerja tetap dihitung jam kerja biasa.')) break;
+      DB.lemburDitolak = (DB.lemburDitolak||[]).filter(x=>x.id !== a.id);
+      DB.lemburDitolak.push({id:a.id, oleh:me.nama, waktu:new Date().toISOString()});
+      if(a.lembur_disetujui){ a.lembur_disetujui = false; sbTambal('presensi', a.id, {lembur_disetujui:false}); }
+      catat('edit', 'presensi', a.id, 'Tolak lembur ' + a.nama + ' ' + a.tanggal, 'lembur', 'ditolak — tidak dibayar');
+      simpanLemburDitolak(); segeraSinkron(); closeSheet(); toast('Lembur ditolak — tidak dibayar'); render(); break;
+    }
+    case 'pulihkanlembur': {
+      if(!can('uang')){ toast('Khusus pemilik'); break; }
+      const a = (DB.presensi||[]).find(x=>x.id === d.id); if(!a) break;
+      DB.lemburDitolak = (DB.lemburDitolak||[]).filter(x=>x.id !== a.id);
+      catat('edit', 'presensi', a.id, 'Batalkan penolakan lembur ' + a.nama + ' ' + a.tanggal, 'ditolak', 'menunggu persetujuan');
+      simpanLemburDitolak(); segeraSinkron(); closeSheet(); toast('Penolakan dibatalkan — lembur kembali menunggu persetujuan'); render(); break;
+    }
+    case 'setujuisemualembur': {
+      if(!can('uang')){ toast('Khusus pemilik'); break; }
+      const ids = (DB.presensi||[]).filter(lemburPerluSetuju).filter(a=>a.pulang).map(a=>a.id);
+      if(!ids.length){ toast('Tidak ada lembur yang menunggu'); break; }
+      if(!confirm('Setujui ' + ids.length + ' sesi lembur? Semuanya akan dibayar di gaji.')) break;
+      for(const id of ids){ const a = DB.presensi.find(x=>x.id === id); a.lembur_disetujui = true;
+        await sbTambal('presensi', a.id, {lembur_disetujui:true}); }
+      catat('edit', 'presensi', '-', 'Setujui ' + ids.length + ' sesi lembur', 'menunggu', 'disetujui oleh ' + me.nama);
+      alokasiBatal(); save(); segeraSinkron(); toast(ids.length + ' sesi lembur disetujui'); render(); break;
+    }
     case 'setujuilembur': {
       if(!can('uang')){ toast('Khusus pemilik'); break; }
       const a = (DB.presensi||[]).find(x=>x.id === d.id); if(!a) break;
+      if(lemburDitolak(a.id)){ DB.lemburDitolak = DB.lemburDitolak.filter(x=>x.id !== a.id); simpanLemburDitolak(); }
       a.lembur_disetujui = true; save();
+      catat('edit', 'presensi', a.id, 'Setujui lembur ' + a.nama + ' ' + a.tanggal, 'menunggu', 'disetujui');
+      closeSheet();
       await sbTambal('presensi', a.id, {lembur_disetujui:true});
       segeraSinkron(); toast('Lembur disetujui'); render(); break;
     }
@@ -8191,6 +8279,9 @@ async function sbTarik(){                       // ambil data dari server
     if(set.usaha_potonganTelatRp != null) DB.usaha.potonganTelatRp = Number(set.usaha_potonganTelatRp) || 0;
     if(set.usaha_potonganTanpaAbsenRp != null && set.usaha_potonganTanpaAbsenRp !== '')
       DB.usaha.potonganTanpaAbsenRp = Number(set.usaha_potonganTanpaAbsenRp) || 0;
+    if(set.lembur_ditolak != null){
+      try{ const L2 = JSON.parse(set.lembur_ditolak || '[]'); if(Array.isArray(L2)) DB.lemburDitolak = L2.filter(x=>x && x.id); }catch(e){}
+    }
     if(set.libur_usaha != null){
       try{ const L = JSON.parse(set.libur_usaha || '[]'); if(Array.isArray(L)) DB.liburUsaha = L.filter(x=>x && x.tgl); }catch(e){}
     }
