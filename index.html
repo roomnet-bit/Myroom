@@ -1200,7 +1200,7 @@ function catat(aksi, tabel, rekid, judul, sebelum, sesudah){
   sbSimpan('log', [r]);          // permanen di server; kalau gagal masuk antre
   return r;
 }
-const VERSI = '4.5';
+const VERSI = '4.6';
 /* ================= ATURAN PENGUBAHAN DATA =================
    UANG — jumlah diterima hanya boleh NAIK di tangan karyawan.
    Pelanggan bayar 50rb pagi lalu 70rb sore? Karyawan tinggal mengubah
@@ -3604,7 +3604,7 @@ function sheetAturanAbsen(){
       <p style="margin:0 0 10px"><b>Jendela sebelum jam masuk</b><br>
         Mulai 1 jam sebelum jam masuk jadwal, cuma tombol Mulai Lembur yang aktif. Kalau sudah pencet
         Lembur di jendela ini, tidak perlu absen masuk lagi hari itu — gajinya dipisah: lembur pra-shift
-        (${rp(LEMBUR_PRA_SHIFT_RP_PER_JAM)}/jam, tarif flat) + gaji pokok seperti biasa. Kalau tidak pencet
+        ${lihatUpahLembur()? '(' + rp(LEMBUR_PRA_SHIFT_RP_PER_JAM) + '/jam, tarif flat) ' : ''}+ gaji pokok seperti biasa. Kalau tidak pencet
         Lembur, mulai 20 menit sebelum jam masuk, tombol Absen Masuk ikut terbuka — tombol Mulai Lembur
         tetap bisa dipencet sampai jam masuk. Menit sebelum jam masuk yang lewat tombol Lembur dibayar sebagai
         lembur, jam istirahat tidak dihitung.</p>
@@ -3721,7 +3721,7 @@ function vPresensi(){
         <td class="n" style="font-size:12px;color:var(--ink2)">${jamTeks(rk.menitLemburBiasa)}</td></tr>
         <tr><td style="padding-left:10px;font-size:12px;color:var(--ink2)">&rsaquo; lembur tarif siaga (bersamaan gangguan)</td>
         <td class="n" style="font-size:12px;color:var(--ink2)">${jamTeks(rk.menitLemburSiaga)}</td></tr>`:''}
-      ${rk.tarif? `<tr class="tot"><td><b>Upah lembur</b></td><td class="n"><b>${rp(rk.upahLembur)}</b></td></tr>`:''}
+      ${rk.tarif && lihatUpahLembur()? `<tr class="tot"><td><b>Upah lembur</b></td><td class="n"><b>${rp(rk.upahLembur)}</b></td></tr>`:''}
     </tbody></table>
   </div>`;
 
@@ -4233,7 +4233,7 @@ function sheetRapot(nama){
       <tr><td>Setoran diterima</td><td class="n">${rp(T.setoran)}<br><span style="font-size:11px;color:var(--ink2)">${T.jmlBayar} pembayaran</span></td></tr>
       <tr><td><b>Total poin</b></td><td class="n"><b>${poinTeks(T.poin)}</b></td></tr>
       <tr><td>Bonus poin</td><td class="n"${T.bonus?' style="color:var(--lunas)"':''}>${T.bonus? rp(T.bonus):'—'}</td></tr>
-      <tr><td>Upah lembur</td><td class="n"${T.upahLembur?' style="color:var(--lunas)"':''}>${T.upahLembur? rp(T.upahLembur):'—'}</td></tr>
+      ${lihatUpahLembur()? `<tr><td>Upah lembur</td><td class="n"${T.upahLembur?' style="color:var(--lunas)"':''}>${T.upahLembur? rp(T.upahLembur):'—'}</td></tr>`:''}
       <tr class="tot"><td><b>Gaji sudah dibayar</b></td><td class="n"><b>${rp(T.dibayar)}</b></td></tr>
     </tbody></table>
 
@@ -4280,8 +4280,7 @@ Tagihan    : ${T.tagih} rumah
 Setoran    : ${rp(T.setoran)}
 Total poin : ${poinTeks(T.poin)}
 Bonus      : ${rp(T.bonus)}
-Upah lembur: ${rp(T.upahLembur)}
-${'-'.repeat(28)}
+${lihatUpahLembur()? 'Upah lembur: ' + rp(T.upahLembur) + '\n' : ''}${'-'.repeat(28)}
 Gaji dibayar tahun ini: ${rp(T.dibayar)}`;
 }
 
@@ -5731,6 +5730,9 @@ const LEMBUR_SETUJU_MULAI = '2026-10-07';
    biasa (poin datang awal tetap dapat). Lembur Minggu tetap perlu disetujui.
    Sebelum tanggal ini berlaku aturan lama. */
 const LEMBUR_HANYA_MINGGU_MULAI = '2026-11-26';
+/* Keputusan pemilik 26 Nov 2026: nominal upah lembur hanya terlihat oleh
+   pemilik. Karyawan tetap melihat JAM lemburnya, tapi tidak rupiahnya. */
+const lihatUpahLembur = () => !!(me && can('uang'));
 function lemburBolehTanggal(tgl){
   const t = String(tgl || '').slice(0,10);
   return t < LEMBUR_HANYA_MINGGU_MULAI || new Date(t + 'T00:00:00').getDay() === 0;
