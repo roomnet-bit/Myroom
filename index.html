@@ -1200,7 +1200,7 @@ function catat(aksi, tabel, rekid, judul, sebelum, sesudah){
   sbSimpan('log', [r]);          // permanen di server; kalau gagal masuk antre
   return r;
 }
-const VERSI = '4.4';
+const VERSI = '4.5';
 /* ================= ATURAN PENGUBAHAN DATA =================
    UANG — jumlah diterima hanya boleh NAIK di tangan karyawan.
    Pelanggan bayar 50rb pagi lalu 70rb sore? Karyawan tinggal mengubah
@@ -1512,7 +1512,7 @@ function rincianSlipHtml(g){
       `<tr><td>Telat masuk / pulang cepat</td><td class="n">${g.kaliTelat}x · ${jamTeks(g.menitTelat)}</td></tr>`,
       g.belumTutup ? `<tr><td>Lupa absen pulang</td><td class="n">${g.belumTutup}x</td></tr>` : '',
       g.menitLemburMenunggu ? `<tr><td>Lembur menunggu persetujuan (belum dibayar)</td><td class="n">${jamTeks(g.menitLemburMenunggu)}</td></tr>` : '',
-      g.menitLemburDitolak ? `<tr><td>Lembur ditolak (tidak dibayar)</td><td class="n">${jamTeks(g.menitLemburDitolak)}</td></tr>` : ''
+      g.menitLemburDitolak ? `<tr><td>Lembur tidak dibayar (ditolak / bukan hari Minggu)</td><td class="n">${jamTeks(g.menitLemburDitolak)}</td></tr>` : ''
     ])}</div>`);
 
   /* 2. Tidak masuk */
@@ -3697,7 +3697,7 @@ function vPresensi(){
           : `<button class="btn p w" data-act="presensipulang">🔴 Absen Pulang (sesi berjalan sejak ${jamSaja(buka.masuk)})</button>`)
       : (()=>{ const st = statusTombolPresensi(me, d.getDay(), rekapSaya.iniLibur, sesiKini);
           return `<button class="btn ${st.masuk?'g':'kunci'} w" data-act="${st.masuk?'presensimasuk':'terkunci'}" data-pesan="${esc(st.pesanMasuk||'Belum bisa absen masuk sekarang')}">${st.masuk?'🟢':'🔒'} Absen Masuk${(sesiKini.length && J.sesi.length <= 1)? ' (sesi '+(sesiKini.length+1)+')':''}</button>
-             <button class="btn ${st.lembur?'w':'kunci'}" style="margin-top:6px" data-act="${st.lembur?'lemburmulai':'terkunci'}" data-pesan="${esc(st.pesanLembur||'Belum bisa mulai lembur sekarang')}">${st.lembur?'🕒':'🔒'} Mulai Lembur <span style="color:var(--ink2);font-weight:400">(foto wajib)</span></button>
+             ${!lemburBolehTanggal(tglKunci()) ? '' : `<button class="btn ${st.lembur?'w':'kunci'}" style="margin-top:6px" data-act="${st.lembur?'lemburmulai':'terkunci'}" data-pesan="${esc(st.pesanLembur||'Belum bisa mulai lembur sekarang')}">${st.lembur?'🕒':'🔒'} Mulai Lembur <span style="color:var(--ink2);font-weight:400">(foto wajib)</span></button>`}
              ${!st.masuk && st.pesanMasuk? `<div style="font-size:11.5px;color:var(--ink2);margin-top:8px">${esc(st.pesanMasuk)}</div>` : ''}`; })()}
   </div>`;
 
@@ -3764,7 +3764,7 @@ function vPresensi(){
           <span style="font-size:10.5px;color:var(--ink2)">upah lembur</span></div>
       </div>`; }).join('') || '<div class="empty"><b>Belum ada anggota tim</b></div>'}
     <div style="font-size:11px;color:var(--ink2);margin-top:8px">
-      Lembur hanya terhitung lewat tombol "Mulai Lembur" (termasuk kerja di hari libur), dan baru dibayar setelah disetujui pemilik. Jam di luar jadwal lewat absen biasa (pulang telat dsb.) tidak dihitung lembur.
+      Lembur <b>hanya hari Minggu</b> (sejak 26 Nov 2026), lewat tombol "Mulai Lembur", dan baru dibayar setelah disetujui pemilik. Senin–Sabtu tidak ada lembur — datang lebih awal atau pulang lewat jadwal tidak dibayar lembur. Jam di luar jadwal lewat absen biasa (pulang telat dsb.) tidak dihitung lembur.
       Jam lembur yang bersamaan dengan gangguan yang sudah disahkan (siaga) dibayar ${Math.round(SIAGA_PENGALI*100)}% dari tarif lembur biasa, karena gangguannya sudah dihargai lewat poin &amp; bonus.
       ${DB.usaha.potongTelat? 'Potongan telat aktif: gaji pokok ÷ ' + HARI_KERJA + ' ÷ jam wajib per jam (per orang) — atur di Setelan.' : ''}
       Atur jadwal tiap orang lewat Menu &rsaquo; Tim &amp; PIN.
@@ -4583,7 +4583,7 @@ function sheetUser(id, jadiPemilik){
       </select>
       <div style="font-size:11px;color:var(--ink2);margin-top:6px">
         Kosongkan upah lembur untuk memakai hitungan otomatis: gaji pokok ÷ ${HARI_KERJA} hari ÷ jam wajib.
-        Lembur hanya terhitung lewat tombol "Mulai Lembur" (termasuk kerja di hari libur), dan baru dibayar setelah disetujui pemilik.
+        Lembur <b>hanya hari Minggu</b> (sejak 26 Nov 2026), lewat tombol "Mulai Lembur", dan baru dibayar setelah disetujui pemilik. Senin–Sabtu tidak ada lembur — datang lebih awal atau pulang lewat jadwal tidak dibayar lembur.
         Jam wajib &amp; upah lembur berlaku sama untuk Senin–Sabtu; yang beda cuma jam kerjanya.
       </div>
     </div>`:''}
@@ -5725,6 +5725,16 @@ const BATAS_LEMBUR_OTOMATIS_MENIT = 120;
    sudah dibayar tidak berubah. Datang awal / pulang lewat jadwal lewat absen
    biasa tidak perlu persetujuan (tetap otomatis). */
 const LEMBUR_SETUJU_MULAI = '2026-10-07';
+/* Keputusan pemilik 26 Nov 2026: mulai tanggal ini LEMBUR HANYA HARI MINGGU.
+   Senin–Sabtu tombol Lembur disembunyikan dan tidak ada bayaran lembur sama
+   sekali — termasuk datang lebih awal / pulang lewat jadwal lewat absen
+   biasa (poin datang awal tetap dapat). Lembur Minggu tetap perlu disetujui.
+   Sebelum tanggal ini berlaku aturan lama. */
+const LEMBUR_HANYA_MINGGU_MULAI = '2026-11-26';
+function lemburBolehTanggal(tgl){
+  const t = String(tgl || '').slice(0,10);
+  return t < LEMBUR_HANYA_MINGGU_MULAI || new Date(t + 'T00:00:00').getDay() === 0;
+}
 /* Lembur DITOLAK pemilik: sesinya tetap tersimpan (jam kerja normal di dalam
    jadwal tetap dihitung), hanya bagian lemburnya tidak dibayar. Disimpan di
    tabel pengaturan (kunci "lembur_ditolak", JSON daftar id sesi) supaya
@@ -5734,7 +5744,7 @@ function simpanLemburDitolak(){
   save();
   if(sbOn()) sbPengaturan('lembur_ditolak', JSON.stringify(DB.lemburDitolak||[]));
 }
-const lemburPerluSetuju = a => !!(a && a.resmi_lembur && !a.lembur_disetujui && !lemburDitolak(a.id)
+const lemburPerluSetuju = a => !!(a && a.resmi_lembur && !a.lembur_disetujui && !lemburDitolak(a.id) && lemburBolehTanggal(a.tanggal)
   && String(a.tanggal||'') >= LEMBUR_SETUJU_MULAI);
 /* Batas maksimal per SESI lembur di hari libur (lihat rekapHari) — bukan
    batas total sehari, tapi per sesi. Kalau masih lanjut kerja setelah 2
@@ -5822,6 +5832,11 @@ function jamHM(menit){ menit = ((menit % 1440) + 1440) % 1440;
       dimulai kapan saja, 24 jam (batas 2 jam per sesi tetap berlaku, lihat
       BATAS_LEMBUR_SESI_MENIT). */
 function statusTombolPresensi(u, hari, iniLibur, sesiHariIni){
+  const st = statusTombolPresensiDasar(u, hari, iniLibur, sesiHariIni);
+  if(!lemburBolehTanggal(tglKunci())){ st.lembur = false; st.pesanLembur = 'Lembur hanya hari Minggu'; }
+  return st;
+}
+function statusTombolPresensiDasar(u, hari, iniLibur, sesiHariIni){
   sesiHariIni = sesiHariIni || [];
   const J = jadwalUser(u, hari);
   const opMulai = (DB.usaha.jamOpMulai != null) ? DB.usaha.jamOpMulai : 480;
@@ -5953,8 +5968,9 @@ function rekapHari(u, tanggal, sesiAbsen){
        lembur_pra_shift (Pasal 5) dipisah, dibayar tarif flat, bukan tarif
        lembur pribadi. */
     if(a.resmi_lembur){
-      if(lemburDitolak(a.id)){
-        /* ditolak: lembur tidak dibayar; jam di dalam jadwal tetap jam kerja */
+      if(lemburDitolak(a.id) || !lemburBolehTanggal(tanggal)){
+        /* ditolak, atau lembur di hari selain Minggu (sejak 26 Nov 2026):
+           lembur tidak dibayar; jam di dalam jadwal tetap jam kerja */
         let dT = 0, jT = 0;
         if(!iniLibur){
           for(const w of J.sesi) dT += irisanMenit(m1, m2, w.mulai, w.selesai);
@@ -6049,7 +6065,7 @@ function rekapHari(u, tanggal, sesiAbsen){
            jangan dibayar lagi sebagai lembur datang awal. Poin datang awal
            tetap dapat. */
         const pertama = sesiAbsen.slice().sort((x,y)=>new Date(x.masuk) - new Date(y.masuk))[0];
-        lemburAwal = (pertama && pertama.resmi_lembur) ? 0 : awalMenit;
+        lemburAwal = ((pertama && pertama.resmi_lembur) || !lemburBolehTanggal(tanggal)) ? 0 : awalMenit;
       }
       /* Pulang cepat cuma masuk akal kalau hari itu memang sudah SELESAI.
          Dengan aturan baru (jadwal berjeda cukup 1x masuk & 1x pulang,
@@ -6074,7 +6090,7 @@ function rekapHari(u, tanggal, sesiAbsen){
           telat.push({sesi:wTerakhir.teks, menit:kurang, jenis:'pulang', jadwal:wTerakhir.selesai, jam:pulangTerakhir});
           telatPotongMenit += Math.max(0, kurang - TOLERANSI_MENIT);
         }else if(kurang < 0){
-          lemburTelatPulang = Math.max(0, -kurang - KOMPENSASI_PULANG_MENIT);
+          lemburTelatPulang = lemburBolehTanggal(tanggal) ? Math.max(0, -kurang - KOMPENSASI_PULANG_MENIT) : 0;
         }
       }
     }
@@ -6673,6 +6689,7 @@ document.addEventListener('click', async e=>{
          terputus di lapangan. */
       const bk2 = presensiTerbuka(me.id);
       if(!bk2 || !bk2.resmi_lembur){ toast('Tidak ada sesi lembur berjalan'); break; }
+      if(!lemburBolehTanggal(bk2.tanggal)){ toast('Lembur hanya hari Minggu'); break; }
       if(!confirm('Sesi lembur ini sudah 2 jam. Lanjut ke sesi lembur baru?')) break;
       const sekarang = new Date().toISOString();
       bk2.pulang = sekarang; save();
